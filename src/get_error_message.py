@@ -26,13 +26,14 @@ def get_error_message_from_run_output(run_id):
     if response.status_code == 200:
         data = response.json()
         error_message = data.get("error", "No error message found.")
-        print(f"\nError Message from Job Run ID {run_id}:\n{error_message}")
-        return error_message
+        #print(f"\nError Message from Job Run ID {run_id}:\n{error_message}")
+        notebook_path = data.get("metadata").get('tasks')[0]['notebook_task']['notebook_path']
+        return {"error_message":error_message,"Path":notebook_path}
     else:
         print(f"Failed to retrieve output. Status Code: {response.status_code}")
         print(response.text)
         return None
-
+"""
 if __name__ == "__main__":
     # Step 1: Get Job IDs
     job_id = list_databricks_jobs()
@@ -55,4 +56,6 @@ if __name__ == "__main__":
     Task_run_id = get_task_run_ids(job_run_id)
 
     # Step 4: Get and print error message for the Job Run ID
-    get_error_message_from_run_output(Task_run_id)
+    print(get_error_message_from_run_output(Task_run_id))
+"""
+    

@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 from crewai import Agent, Task, Crew,LLM
 from crewai.knowledge.source.string_knowledge_source import StringKnowledgeSource
 from crewai.tools import tool
+from pydantic import BaseModel
 
 load_dotenv()
 os.environ['OPENAI_API_KEY']
@@ -16,6 +17,9 @@ from DatabricksJobManager import (
     get_task_run_ids
 )
 from get_error_message import get_error_message_from_run_output
+class Blog(BaseModel):
+    Path: str
+    Code: str
 
 #Fetching necessary Id's to read the error message and the main Notebook path 
 #Get the Job_Id of the latest job
@@ -89,7 +93,8 @@ IdentifyFaultyNotebook = Task(
 ),
     agent=NotebookLocatorAgent,
     expected_output="The full path of the notebook most closely associated with the error, along with the line of code that caused the potential error",
-    input_variables={"path":Path}
+    input_variables={"path":Path},
+    output_json=Blog
 )
 
 
@@ -100,4 +105,7 @@ if __name__ == "__main__":
             knowledge_sources=[Error_source,code_source,path_source]
             )
     result = crew.kickoff()
-    print(result)
+    print("NoteBook Path:",result["Path"])
+    print("Code That Caused the error:",result["Code"])
+    #task_output = IdentifyFaultyNotebook.output
+    #print(task_output.json_dict)

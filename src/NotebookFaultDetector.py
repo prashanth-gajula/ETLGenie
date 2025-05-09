@@ -17,7 +17,7 @@ from DatabricksJobManager import (
     get_task_run_ids
 )
 from get_error_message import get_error_message_from_run_output
-class Blog(BaseModel):
+class NoteBookPathAndError(BaseModel):
     Path: str
     Code: str
 
@@ -94,7 +94,7 @@ IdentifyFaultyNotebook = Task(
     agent=NotebookLocatorAgent,
     expected_output="The full path of the notebook most closely associated with the error, along with the line of code that caused the potential error",
     input_variables={"path":Path},
-    output_json=Blog
+    output_json=NoteBookPathAndError
 )
 
 

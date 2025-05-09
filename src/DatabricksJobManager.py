@@ -141,11 +141,11 @@ def get_task_run_ids(job_run_id):
         print("No tasks found — this might be a single-task job.")
 
     return task_run_id 
-
+"""
 if __name__ == "__main__":
     job_id = list_databricks_jobs()
     print("Job_Id:",job_id)
     job_run_Id = get_latest_job_run_id(job_id)
     print("Job_Run_Id:",job_run_Id.get('job_run_id'))
     Task_run_id = get_task_run_ids(job_run_Id.get('job_run_id'))
-    print("Task_run_Id:",Task_run_id)
+    print("Task_run_Id:",Task_run_id)"""

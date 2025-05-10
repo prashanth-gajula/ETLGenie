@@ -17,12 +17,14 @@ from DatabricksJobManager import (
     get_task_run_ids
 )
 from get_error_message import get_error_message_from_run_output
+from UpdateDataBricksNotebook import upload_notebook_to_databricks
 class NoteBookPathAndError(BaseModel):
     Path: str
     Code: str
     
 class FixedCode(BaseModel):
-    Code: str
+    Fix: str
+    updated_full_code: str
 
 #Fetching necessary Id's to read the error message and the main Notebook path 
 #Get the Job_Id of the latest job
@@ -41,6 +43,11 @@ SourceCode = fetch_notebook_source(Path)
 def FetchSourceCode(Path: str) -> str:
     """Fetch and return the source code of the Databricks notebook given a full workspace path."""
     return fetch_notebook_source(Path)
+
+@tool("UploadNotebook")
+def UpdateNotebook(Path: str, source_code: str) -> str:
+    """Fetch and return the source code of the Databricks notebook given a full workspace path."""
+    return upload_notebook_to_databricks(Path,source_code)
 
 Error_Message = Error_And_Path.get("error_message")
 
@@ -116,37 +123,77 @@ FixSuggestionAgent = Agent(
 FixErrorLineTask = Task(
     name="Fix Error Line",
     description=(
-        "You are provided with:\n"
+        "You are a debugging agent analyzing a Databricks notebook failure.\n\n"
+        "**You are provided with:**\n"
         "- The full notebook path that contains the error: {{ notebook_path }}\n"
         "- The original line of code that caused the failure: {{ error_line }}\n"
         "- The error message generated during execution: {{ error_message }}\n\n"
 
-        "**Instructions:**\n"
-        "1. Call the tool `FetchSourceCode(path='{{ notebook_path }}')` to retrieve the full source code of the notebook.\n"
-        "2. Analyze the full source code, especially the surrounding context of the failing line.\n"
-        "3. Understand the likely reason for the error using the notebook's logic and the error message.\n"
-        "4. Suggest a corrected version of the failing line.\n\n"
-        "5. use the path variable fromm the previous task to reterive the source code of the note book.\n"
-        "6. you can find the original error in the knowledge sources.\n"
+        "**Your goal is to:**\n"
+        "1. Call the tool `FetchSourceCode(path='{{ notebook_path }}')` to retrieve the full notebook source code.\n"
+        "2. Store the result of the tool (i.e., the full source code) in memory.\n"
+        "3. Search for the line `{{ error_line }}` in that notebook code.\n"
+        "4. Replace the faulty line with a corrected version based on the error message.\n"
+        "5. Reconstruct the notebook with the fix applied in place of the original line.\n\n"
 
-        "**Constraints:**\n"
-        "- Only return the corrected line as a JSON object like this:\n"
-        "  {\"suggested_fix\": \"<your_fixed_code_here>\"}\n"
-        "- Do not suggest changes to unrelated code.\n"
-        "- Do not include commentary or markdown.\n"
+        "**Instructions for Output:**\n"
+        "- Return a JSON with the following structure:\n"
+        "  {\n"
+        "    \"suggested_fix\": \"<corrected_line_of_code>\",\n"
+        "    \"updated_full_code\": \"<entire_fixed_notebook_code>\"\n"
+        "  }\n"
+        "- Do not suggest unrelated changes.\n"
+        "- Do not include markdown, explanation, or comments.\n"
+        "- Make sure the original structure of the notebook is preserved in `updated_full_code`.\n"
     ),
     agent=FixSuggestionAgent,
-    expected_output="A JSON with a single key `suggested_fix` containing the corrected Spark code line.",
-    context = [IdentifyFaultyNotebook],
+    expected_output=(
+        "A JSON object with the corrected line as `suggested_fix` and the fully updated notebook code as `updated_full_code`."
+    ),
+    context=[IdentifyFaultyNotebook],  # Make sure this task runs after your locator
     output_json=FixedCode
 )
 
+#Agent to fix the notebook code
+UploadAgent = Agent(
+    name="NotebookUploaderAgent",
+    role="Databricks Notebook Publisher",
+    goal="Update the Databricks workspace with the newly fixed notebook code.",
+    backstory="You are a deployment automation agent responsible for publishing updated notebook code.",
+    description="Takes the updated notebook source code and uploads it to Databricks using the workspace/import API.",
+    tools=[UpdateNotebook],
+    verbose=True
+)
+
+UploadNotebookTask = Task(
+    name="Publish Fixed Notebook",
+    description=(
+    "You are the final publishing agent in a multi-step debugging pipeline.\n\n"
+    "**Context:**\n"
+    "- The task `IdentifyFaultyNotebook` has already identified the notebook path (`Path`) that caused the error.\n"
+    "- The task `FixErrorLineTask` has already provided the corrected full source code (`updated_full_code`) for that notebook.\n\n"
+    "**Your Responsibilities:**\n"
+    "1. Use the notebook path returned from the first task (`IdentifyFaultyNotebook`).\n"
+    "2. Use the updated full notebook code returned from the second task (`FixErrorLineTask`).\n"
+    "3. Call the tool `UploadNotebook(path=..., source_code=...)` using those values.\n"
+    "4. Ensure the notebook is updated in the Databricks workspace successfully.\n\n"
+    "**Constraints:**\n"
+    "- Do not modify the updated code.\n"
+    "- Do not generate new logic.\n"
+    "- Simply upload the notebook as-is using the provided path and source code.\n\n"
+    "**Output:**\n"
+    "Return only the success or failure message from the upload tool execution."
+),
+    agent=UploadAgent,
+    expected_output="A confirmation that the notebook was successfully uploaded to Databricks.",
+    context=[IdentifyFaultyNotebook,FixErrorLineTask]
+) 
 
 
 if __name__ == "__main__":
     crew = Crew(
-            agents=[NotebookLocatorAgent,FixSuggestionAgent],
-            tasks=[IdentifyFaultyNotebook,FixErrorLineTask],
+            agents=[NotebookLocatorAgent,FixSuggestionAgent,UploadAgent],
+            tasks=[IdentifyFaultyNotebook,FixErrorLineTask,UploadNotebookTask],
             knowledge_sources=[Error_source,code_source,path_source],
             process_type="sequential"
             )

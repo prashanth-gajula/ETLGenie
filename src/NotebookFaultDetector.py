@@ -98,20 +98,40 @@ NotebookLocatorAgent = Agent(
 IdentifyFaultyNotebook = Task(
     name="Identify Faulty Notebook",
     description=(
-    "You are a debugging agent analyzing Databricks notebook failures.\n"
-    "Inputs:\n"
-    "- Error message: {{ error_message }}\n"
-    "- Main notebook source code: {{ main_notebook_code }}\n"
-    "- Main notebook path: {{ main_path }}\n\n"
+    "You are a debugging agent responsible for identifying the Databricks notebook most likely responsible for the reported error.\n\n"
+    "**Inputs:**\n"
+    "- `error_message`: {{ error_message }}\n"
+    "- `main_notebook_code`: {{ main_notebook_code }}\n"
+    "- `main_path`: {{ main_path }} (e.g., `/Workspace/Users/...`)\n\n"
+
     "**Instructions:**\n"
-    "1. Scan the main notebook for any `%run` statements.\n"
-    "2. If the `%run` references a relative path like `./reader_factory`, you must convert it to a full path.\n"
-    "3. To do this, use the main notebook path `{{ main_path }}` and append the notebook name.\n"
-    "   - Example: if `%run ./reader_factory`, and `main_path = /Workspace/Users/kumargajula782@gmail.com/AppleAnalysis`,\n"
-    "     then full path = `/Workspace/Users/kumargajula782@gmail.com/AppleAnalysis/reader_factory`\n"
-    "4. Once you’ve built the full path, call the tool `FetchSourceCode(path='...')` with that full path.\n"
-    "5. Analyze the retrieved notebook source to determine if it contains logic related to the error.\n\n"
-    "**Important:** Only call `FetchSourceCode()` using paths that start with `/`. Do not call it with relative paths."
+    "1. Carefully scan `main_notebook_code` for all `%run` statements that reference other notebooks.\n"
+    "2. For each `%run` line:\n"
+    "   - If it uses a relative path like `%run ./notebook_name`, convert it to an absolute path using `main_path`.\n"
+    "     For example, `%run ./reader_factory` + `main_path=/Workspace/Users/.../AppleAnalysis` becomes `/Workspace/Users/.../AppleAnalysis/reader_factory` do this for all other notebooks\n"
+    "3. Use the tool `FetchSourceCode(path='...')` for each notebook reference to retrieve its content.\n"
+    "4. Compare the `error_message` to the code logic inside each notebook.\n"
+    "   - Focus on function names, column names, or DataFrame logic that might directly relate to the error.\n"
+    "5. Continue checking **all** notebooks before concluding.\n"
+    "6. After retrieving the notebook content, analyze each line of the code and match it against the terms mentioned in the error message. You must return the line of code that explicitly uses or references a column, variable, or function name mentioned in the error\n\n"
+    
+    "**Important:**\n"
+    "2. Ignore the 'Did you mean...' suggestions. They are not part of the error.\n"
+    "3. Scan the full notebook source code for any line that directly references\n"
+    "4. Your output must return exactly the line where this unresolved column is used. For example:\n"
+    "5. Do not guess based on unrelated column names\n"
+    "6. Return only the full path and the exact line of code that matches the above rules."
+
+
+    "**Constraints:**\n"
+    "- Do NOT assume the first `%run` notebook is the source of the error.\n"
+    "- Only return a notebook as the faulty one if its content aligns closely with the error message.\n"
+    "- Do NOT hallucinate notebook names or paths — use only real, parsed values.\n"
+    "- Ensure that the returned path starts with `/` (full Databricks path).\n\n"
+
+    "**Output:** Return a JSON with:\n"
+    "- `Path`: the full notebook path with the error.\n"
+    "- `Code`: the line in the notebook that most likely caused the error."
 ),
     agent=NotebookLocatorAgent,
     expected_output="The full path of the notebook most closely associated with the error, along with the line of code that caused the potential error",

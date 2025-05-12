@@ -18,6 +18,7 @@ from DatabricksJobManager import (
 )
 from get_error_message import get_error_message_from_run_output
 from UpdateDataBricksNotebook import upload_notebook_to_databricks
+from ReRunDataBricksJob import rerun_databricks_job
 class NoteBookPathAndError(BaseModel):
     Path: str
     Code: str
@@ -29,6 +30,7 @@ class FixedCode(BaseModel):
 #Fetching necessary Id's to read the error message and the main Notebook path 
 #Get the Job_Id of the latest job
 Job_Id = list_databricks_jobs()
+#print(Job_Id)
 #get latest JobRunId for that Job
 Job_Run_Id = get_latest_job_run_id(Job_Id)
 #Get Task run Id for that job run Id
@@ -36,6 +38,7 @@ Task_run_id = get_task_run_ids(Job_Run_Id.get("job_run_id"))
 
 #Fetching Actual Error and the file path of the main notebook
 Error_And_Path = get_error_message_from_run_output(Task_run_id)
+print(Error_And_Path)
 Path = Error_And_Path.get("Path")
 #Fetching the Actual SourceCode of the main not book with the help of notebook path that we have received from previous step.
 SourceCode = fetch_notebook_source(Path)
@@ -49,6 +52,11 @@ def UpdateNotebook(Path: str, source_code: str) -> str:
     """Fetch and return the source code of the Databricks notebook given a full workspace path."""
     return upload_notebook_to_databricks(Path,source_code)
 
+@tool("RunDataBricksJob")
+def RunDataBricksJob(Job_Id: int)-> str:
+    """Run the DatBricks Job that has failed"""
+    return rerun_databricks_job(Job_Id)
+
 Error_Message = Error_And_Path.get("error_message")
 
 Error_source = StringKnowledgeSource(
@@ -61,6 +69,10 @@ code_source = StringKnowledgeSource(
 
 path_source = StringKnowledgeSource(
     content=Path,
+)
+
+Job_Id_source = StringKnowledgeSource(
+    content=str(Job_Id),
 )
 
 NotebookLocatorAgent = Agent(
@@ -189,6 +201,31 @@ UploadNotebookTask = Task(
     context=[IdentifyFaultyNotebook,FixErrorLineTask]
 ) 
 
+#Re-Run DataBricks Job
+JobRerunAgent = Agent(
+    name="JobRerunAgent",
+    role="Databricks Job Executor",
+    goal="Trigger a Databricks job to re-run after the notebook code has been updated.",
+    backstory="You are responsible for restarting the Databricks job after the notebook fix has been published successfully.",
+    tools=[RunDataBricksJob],
+    verbose=True
+)
+#print(Job_Id)
+RerunDatabricksJobTask = Task(
+    name="Re-run Databricks Job",
+    description=(
+        "The notebook has been updated successfully with the corrected code.\n"
+        "Now your task is to re-run the Databricks job using the job ID provided below.\n\n"
+        "**Instructions:**\n"
+        "1. Call the tool `RunDatabricksJob(job_id=...)`.\n"
+        "2. Confirm that the job has been triggered.\n"
+        "3. Return the confirmation message that includes the run ID.\n\n"
+        "4.Job Id is available in the knowledge_Sources as Job_Id_source before passing the argument to the tool pls convert it into int from string"
+        "**Do not validate or modify the job logic.** Your only task is to trigger the job again."
+    ),
+    agent=JobRerunAgent,
+    expected_output="A confirmation that the Databricks job was triggered, including the run ID."
+)
 
 if __name__ == "__main__":
     crew = Crew(
